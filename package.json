@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "Web-based git browser for Solid pods",
   "scripts": {
-    "build": "esbuild src/app.js --bundle --outfile=app.js --format=esm --target=es2022 --alias:crypto=crypto-browserify --alias:stream=stream-browserify --define:global=globalThis --minify"
+    "build": "esbuild src/app.js --bundle --outfile=app.js --format=esm --target=es2022 --alias:crypto=crypto-browserify --alias:stream=stream-browserify --define:global=globalThis --inject:./src/shim.js --minify"
   },
   "repository": {
     "type": "git",
@@ -19,11 +19,13 @@
   "homepage": "https://github.com/JavaScriptSolidServer/git#readme",
   "dependencies": {
     "@isomorphic-git/lightning-fs": "^4.6.2",
+    "buffer": "^6.0.3",
     "crypto-browserify": "^3.12.1",
     "htm": "^3.1.1",
     "isomorphic-git": "^1.37.6",
     "marked": "^18.0.3",
     "preact": "^10.29.1",
+    "process": "^0.11.10",
     "stream-browserify": "^3.0.0"
   },
   "devDependencies": {
