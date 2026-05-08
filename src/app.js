@@ -524,10 +524,19 @@ function App() {
   const currentEntries = subTree || tree;
   const currentFolderPath = isFolderView ? path : '';
 
+  const onCopyClone = () => {
+    navigator.clipboard?.writeText(`git clone ${url}`);
+  };
+
   return html`
-    <h1>JSS Git</h1>
-    <p class="meta">Browse a git repository hosted on a Solid pod (or any git remote).</p>
-    <form onSubmit=${onSubmit}>
+    ${!repoReady && html`
+      <h1>JSS Git</h1>
+      <p class="meta">Browse a git repository hosted on a Solid pod (or any git remote).</p>
+    `}
+    ${repoReady && html`
+      <p class="top-bar"><a href="?" class="brand">JSS Git</a></p>
+    `}
+    <form onSubmit=${onSubmit} class=${repoReady ? 'form-compact' : ''}>
       <div class="form-row">
         <input
           type="url"
@@ -708,9 +717,28 @@ function App() {
               ${refs && html`<li><span class="stat-label">Refs</span>${refs.length}</li>`}
               ${commits && html`<li><span class="stat-label">Commits</span>${commits.length}+</li>`}
               ${tree && html`<li><span class="stat-label">Files (root)</span>${tree.length}</li>`}
+              ${refs && (() => {
+                const tags = refs.filter(r => r.ref.startsWith('refs/tags/')).map(r => r.ref.replace(/^refs\/tags\//, ''));
+                if (tags.length === 0) return null;
+                return html`<li><span class="stat-label">Tags</span>${tags.length}</li>`;
+              })()}
             </ul>
+            ${refs && (() => {
+              const tags = refs.filter(r => r.ref.startsWith('refs/tags/')).map(r => r.ref.replace(/^refs\/tags\//, ''));
+              if (tags.length === 0) return null;
+              return html`
+                <h3 style="margin-top: 1.5rem;">Tags</h3>
+                <ul class="tag-list">
+                  ${tags.slice(0, 10).map(t => html`<li><code>${t}</code></li>`)}
+                  ${tags.length > 10 && html`<li class="meta">+${tags.length - 10} more</li>`}
+                </ul>
+              `;
+            })()}
             <h3 style="margin-top: 1.5rem;">Clone</h3>
-            <pre class="clone-snippet"><code>git clone ${url}</code></pre>
+            <div class="clone-box">
+              <input type="text" readonly class="clone-url" value=${url} onClick=${(e) => e.target.select()} />
+              <button class="copy-btn" onClick=${onCopyClone} title="Copy URL">\u{1F4CB}</button>
+            </div>
           </aside>
         </div>
       `;
@@ -718,8 +746,9 @@ function App() {
 
     ${refs && refs.length === 0 && html`<p class="meta">No refs found (empty repo).</p>`}
 
-    <p class="meta" style="margin-top: 3rem;">
-      Preact + HTM + isomorphic-git + marked. View source.
+    <p class="meta footer">
+      Powered by <a href="https://jss.live">jss.live</a>
+      · <a href="https://github.com/JavaScriptSolidServer/git">View source</a>
     </p>
   `;
 }
