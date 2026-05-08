@@ -527,7 +527,19 @@ function App() {
       <p class="meta">Browse a git repository hosted on a Solid pod (or any git remote).</p>
     `}
     ${repoReady && html`
-      <p class="top-bar"><a href="?" class="brand">JSS Git</a></p>
+      <p class="top-bar">
+        <a href="?" class="brand">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+            <line x1="6" y1="7" x2="6" y2="17" stroke="#1f883d" stroke-width="2" stroke-linecap="round"/>
+            <line x1="6" y1="12" x2="16" y2="12" stroke="#1f883d" stroke-width="2" stroke-linecap="round"/>
+            <circle cx="6" cy="6" r="2.5" fill="#fff" stroke="#1f883d" stroke-width="2"/>
+            <circle cx="6" cy="18" r="2.5" fill="#fff" stroke="#1f883d" stroke-width="2"/>
+            <circle cx="18" cy="12" r="2.5" fill="#fff" stroke="#1f883d" stroke-width="2"/>
+          </svg>
+          <span class="brand-text">JSS Git</span>
+        </a>
+        <span class="brand-tagline">git on a Solid pod</span>
+      </p>
     `}
     <form onSubmit=${onSubmit} class=${repoReady ? 'form-compact' : ''}>
       <div class="form-row">
