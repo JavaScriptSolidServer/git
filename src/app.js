@@ -67,6 +67,7 @@ function App() {
   const [view, setView] = useState(initialView);
   const [refs, setRefs] = useState(null);
   const [tree, setTree] = useState(null);
+  const [subTree, setSubTree] = useState(null); // entries when in a subfolder
   const [readmeHtml, setReadmeHtml] = useState(null);
   const [fileView, setFileView] = useState(null);
   const [commits, setCommits] = useState(null);
@@ -77,6 +78,34 @@ function App() {
   const [commitsLoading, setCommitsLoading] = useState(false);
   const [repoReady, setRepoReady] = useState(false);
   const [branch, setBranch] = useState(null);
+
+  const loadFolder = async (folderPath) => {
+    const headOid = await git.resolveRef({ fs, dir, ref: 'HEAD' });
+    const { tree: subEntries } = await git.readTree({ fs, dir, oid: headOid, filepath: folderPath });
+    subEntries.sort((a, b) => {
+      if (a.type !== b.type) return a.type === 'tree' ? -1 : 1;
+      return a.path.localeCompare(b.path);
+    });
+    setSubTree(subEntries);
+    setFileView(null);
+  };
+
+  const loadPath = async (p) => {
+    setError(null);
+    setSubTree(null);
+    setFileView(null);
+    if (!p) return;
+    try {
+      // Try folder first; if that throws "not a tree" or similar, try file
+      await loadFolder(p);
+    } catch (folderErr) {
+      try {
+        await loadFile(p);
+      } catch (e) {
+        setError(e.message || String(e));
+      }
+    }
+  };
 
   const loadFile = async (filePath) => {
     setError(null);
@@ -212,7 +241,7 @@ function App() {
 
       setRepoReady(true);
 
-      if (path) await loadFile(path);
+      if (path) await loadPath(path);
     } catch (e) {
       setError(e.message || String(e));
     } finally {
@@ -246,17 +275,27 @@ function App() {
     loadRepo(newUrl);
   };
 
-  const onFileClick = (e, filePath, type) => {
-    if (type !== 'blob') return;
+  const onEntryClick = (e, entryPath, type) => {
     e.preventDefault();
-    setPath(filePath);
-    updateUrl({ repo: url, path: filePath });
-    if (repoReady) loadFile(filePath);
+    setPath(entryPath);
+    updateUrl({ repo: url, path: entryPath });
+    if (repoReady) loadPath(entryPath);
+  };
+
+  const navToPath = (e, p) => {
+    e.preventDefault();
+    setPath(p);
+    updateUrl({ repo: url, path: p });
+    if (repoReady) {
+      if (p) loadPath(p);
+      else { setSubTree(null); setFileView(null); }
+    }
   };
 
   const switchView = (e, newView) => {
     e.preventDefault();
     setPath('');
+    setSubTree(null);
     setFileView(null);
     setView(newView);
     updateUrl({ repo: url, view: newView });
@@ -269,15 +308,20 @@ function App() {
       const newView = p.get('view') || 'files';
       setPath(newPath);
       setView(newView);
-      if (newPath) loadFile(newPath); else setFileView(null);
+      if (newPath) loadPath(newPath);
+      else { setSubTree(null); setFileView(null); }
     };
     addEventListener('popstate', onPop);
     return () => removeEventListener('popstate', onPop);
   }, [repoReady]);
 
-  const showRoot = !fileView;
-  const showFiles = showRoot && view === 'files';
-  const showCommits = showRoot && view === 'commits';
+  const isFileView = !!fileView;
+  const isFolderView = !!subTree && !fileView;
+  const isRootView = !fileView && !subTree;
+  const showFiles = !isFileView && view === 'files';
+  const showCommits = !isFileView && !isFolderView && view === 'commits';
+  const currentEntries = subTree || tree;
+  const currentFolderPath = isFolderView ? path : '';
 
   return html`
     <h1>JSS Git</h1>
@@ -298,98 +342,114 @@ function App() {
     ${error && html`<div class="error">${error}</div>`}
     ${loading && html`<p class="loading">Loading…</p>`}
 
-    ${repoReady && html`
-      <div class="repo-header">
-        <span class="repo-breadcrumb">
-          <span class="owner">${parseRepoUrl(url).owner}</span>
-          <span class="separator">/</span>
-          <strong class="repo-name">${parseRepoUrl(url).repo}</strong>
-        </span>
-      </div>
-
-      <div class="layout">
-        <div class="main">
-          ${!fileView && html`
-            <div class="tabs">
-              <a href="#" class=${view === 'files' ? 'tab active' : 'tab'} onClick=${(e) => switchView(e, 'files')}>Code</a>
-              <a href="#" class=${view === 'commits' ? 'tab active' : 'tab'} onClick=${(e) => switchView(e, 'commits')}>Commits${commits ? ` (${commits.length})` : ''}</a>
-            </div>
-          `}
-
-          ${fileView && html`
-            <p class="meta breadcrumb">
-              <a href="#" onClick=${(e) => switchView(e, 'files')}>← back to files</a>
-              <span class="separator">/</span>
-              <span class="path">${fileView.path}</span>
-              <span class="oid">${fileView.oid?.slice(0, 8)}</span>
-            </p>
-
-            ${fileView.kind === 'markdown' && html`<div class="readme" dangerouslySetInnerHTML=${{ __html: fileView.html }}></div>`}
-            ${fileView.kind === 'text' && html`<pre class="file-content"><code>${fileView.text}</code></pre>`}
-            ${fileView.kind === 'image' && html`<div class="file-content image"><img src=${fileView.src} alt=${fileView.path} /></div>`}
-            ${fileView.kind === 'binary' && html`<p class="meta">Binary file (${fileView.size} bytes) — preview not shown.</p>`}
-            ${fileView.kind === 'too-large' && html`<p class="meta">File too large to display (${fileView.size} bytes).</p>`}
-          `}
-
-          ${showFiles && latestCommit && html`
-            <div class="latest-commit">
-              <span class="commit-author">${latestCommit.author}</span>
-              <span class="commit-msg">${latestCommit.message}</span>
-              <span class="oid">${latestCommit.oid.slice(0, 8)}</span>
-              <span class="meta">${relativeTime(latestCommit.timestamp)}</span>
-            </div>
-          `}
-
-          ${showFiles && tree && tree.length > 0 && html`
-            <ul class="file-list">
-              ${tree.map((e) => html`
-                <li>
-                  <span class="file-icon">${e.type === 'tree' ? '\u{1F4C1}' : '\u{1F4C4}'}</span>
-                  ${e.type === 'blob'
-                    ? html`<a href="?repo=${encodeURIComponent(url)}&path=${encodeURIComponent(e.path)}" onClick=${(ev) => onFileClick(ev, e.path, e.type)}>${e.path}</a>`
-                    : html`<span>${e.path}</span>`
-                  }
-                </li>
-              `)}
-            </ul>
-          `}
-
-          ${showFiles && readmeHtml && html`
-            <h2>README</h2>
-            <div class="readme" dangerouslySetInnerHTML=${{ __html: readmeHtml }}></div>
-          `}
-
-          ${showCommits && commitsLoading && html`<p class="loading">Loading commits…</p>`}
-          ${showCommits && commits && commits.length > 0 && html`
-            <ul class="commit-list">
-              ${commits.map((c) => html`
-                <li class="commit">
-                  <div class="commit-message">${c.commit.message.split('\n')[0]}</div>
-                  <div class="commit-meta">
-                    <span class="commit-author">${c.commit.author.name}</span>
-                    <span>committed ${relativeTime(c.commit.author.timestamp)}</span>
-                    <span class="oid">${c.oid.slice(0, 8)}</span>
-                  </div>
-                </li>
-              `)}
-            </ul>
-          `}
-          ${showCommits && commits && commits.length === 0 && html`<p class="meta">No commits.</p>`}
+    ${repoReady && (() => {
+      const { owner, repo } = parseRepoUrl(url);
+      const pathSegs = path ? path.split('/').filter(Boolean) : [];
+      return html`
+        <div class="repo-header">
+          <span class="repo-breadcrumb">
+            <span class="owner">${owner}</span>
+            <span class="separator">/</span>
+            ${pathSegs.length > 0
+              ? html`<a class="repo-link" href="?repo=${encodeURIComponent(url)}" onClick=${(e) => navToPath(e, '')}>${repo}</a>`
+              : html`<strong class="repo-name">${repo}</strong>`
+            }
+            ${pathSegs.map((seg, i) => {
+              const segPath = pathSegs.slice(0, i + 1).join('/');
+              const isLast = i === pathSegs.length - 1;
+              return html`
+                <span class="separator">/</span>
+                ${isLast
+                  ? html`<strong>${seg}</strong>`
+                  : html`<a class="repo-link" href="?repo=${encodeURIComponent(url)}&path=${encodeURIComponent(segPath)}" onClick=${(e) => navToPath(e, segPath)}>${seg}</a>`
+                }
+              `;
+            })}
+          </span>
         </div>
 
-        <aside class="sidebar">
-          <h3>About</h3>
-          <p class="sidebar-desc">A repository hosted on a Solid pod.</p>
-          <p class="sidebar-link"><a href=${url} target="_blank" rel="noopener">${url}</a></p>
-          <ul class="sidebar-stats">
-            ${branch && html`<li><span class="stat-label">Branch</span><code>${branch}</code></li>`}
-            ${refs && html`<li><span class="stat-label">Refs</span>${refs.length}</li>`}
-            ${commits && html`<li><span class="stat-label">Commits</span>${commits.length}+</li>`}
-            ${tree && html`<li><span class="stat-label">Files (root)</span>${tree.length}</li>`}
-          </ul>
-        </aside>
-      </div>
-    `}
+        <div class="layout">
+          <div class="main">
+            ${!isFileView && !isFolderView && html`
+              <div class="tabs">
+                <a href="#" class=${view === 'files' ? 'tab active' : 'tab'} onClick=${(e) => switchView(e, 'files')}>Code</a>
+                <a href="#" class=${view === 'commits' ? 'tab active' : 'tab'} onClick=${(e) => switchView(e, 'commits')}>Commits${commits ? ` (${commits.length})` : ''}</a>
+              </div>
+            `}
+
+            ${isFileView && html`
+              <p class="meta file-meta">
+                <span class="oid">${fileView.oid?.slice(0, 8)}</span>
+              </p>
+              ${fileView.kind === 'markdown' && html`<div class="readme" dangerouslySetInnerHTML=${{ __html: fileView.html }}></div>`}
+              ${fileView.kind === 'text' && html`<pre class="file-content"><code>${fileView.text}</code></pre>`}
+              ${fileView.kind === 'image' && html`<div class="file-content image"><img src=${fileView.src} alt=${fileView.path} /></div>`}
+              ${fileView.kind === 'binary' && html`<p class="meta">Binary file (${fileView.size} bytes) — preview not shown.</p>`}
+              ${fileView.kind === 'too-large' && html`<p class="meta">File too large to display (${fileView.size} bytes).</p>`}
+            `}
+
+            ${isRootView && view === 'files' && latestCommit && html`
+              <div class="latest-commit">
+                <span class="commit-author">${latestCommit.author}</span>
+                <span class="commit-msg">${latestCommit.message}</span>
+                <span class="oid">${latestCommit.oid.slice(0, 8)}</span>
+                <span class="meta">${relativeTime(latestCommit.timestamp)}</span>
+              </div>
+            `}
+
+            ${showFiles && currentEntries && currentEntries.length > 0 && html`
+              <ul class="file-list">
+                ${currentEntries.map((e) => {
+                  const fullPath = currentFolderPath ? `${currentFolderPath}/${e.path}` : e.path;
+                  return html`
+                    <li>
+                      <span class="file-icon">${e.type === 'tree' ? '\u{1F4C1}' : '\u{1F4C4}'}</span>
+                      <a href="?repo=${encodeURIComponent(url)}&path=${encodeURIComponent(fullPath)}" onClick=${(ev) => onEntryClick(ev, fullPath, e.type)}>${e.path}</a>
+                    </li>
+                  `;
+                })}
+              </ul>
+            `}
+
+            ${isRootView && view === 'files' && readmeHtml && html`
+              <h2>README</h2>
+              <div class="readme" dangerouslySetInnerHTML=${{ __html: readmeHtml }}></div>
+            `}
+
+            ${showCommits && commitsLoading && html`<p class="loading">Loading commits…</p>`}
+            ${showCommits && commits && commits.length > 0 && html`
+              <ul class="commit-list">
+                ${commits.map((c) => html`
+                  <li class="commit">
+                    <div class="commit-message">${c.commit.message.split('\n')[0]}</div>
+                    <div class="commit-meta">
+                      <span class="commit-author">${c.commit.author.name}</span>
+                      <span>committed ${relativeTime(c.commit.author.timestamp)}</span>
+                      <span class="oid">${c.oid.slice(0, 8)}</span>
+                    </div>
+                  </li>
+                `)}
+              </ul>
+            `}
+            ${showCommits && commits && commits.length === 0 && html`<p class="meta">No commits.</p>`}
+          </div>
+
+          <aside class="sidebar">
+            <h3>About</h3>
+            <p class="sidebar-desc">A repository hosted on a Solid pod.</p>
+            <p class="sidebar-link"><a href=${url} target="_blank" rel="noopener">${url}</a></p>
+            <ul class="sidebar-stats">
+              ${branch && html`<li><span class="stat-label">Branch</span><code>${branch}</code></li>`}
+              ${refs && html`<li><span class="stat-label">Refs</span>${refs.length}</li>`}
+              ${commits && html`<li><span class="stat-label">Commits</span>${commits.length}+</li>`}
+              ${tree && html`<li><span class="stat-label">Files (root)</span>${tree.length}</li>`}
+            </ul>
+            <h3 style="margin-top: 1.5rem;">Clone</h3>
+            <pre class="clone-snippet"><code>git clone ${url}</code></pre>
+          </aside>
+        </div>
+      `;
+    })()}
 
     ${refs && refs.length === 0 && html`<p class="meta">No refs found (empty repo).</p>`}
 
