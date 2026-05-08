@@ -84,10 +84,7 @@
         setError(null);
         setRefs(null);
         try {
-          // protocolVersion: 1 avoids the `git-protocol` header that
-          // isomorphic-git sends in v2, which trips CORS preflight on
-          // current JSS git handlers. Remove once JSS allows the header.
-          const result = await git.listServerRefs({ http, url: repoUrl, protocolVersion: 1 });
+          const result = await git.listServerRefs({ http, url: repoUrl });
           setRefs(result);
         } catch (e) {
           setError(e.message || String(e));
