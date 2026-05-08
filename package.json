@@ -25,6 +25,7 @@
     "isomorphic-git": "^1.37.6",
     "marked": "^18.0.3",
     "preact": "^10.29.1",
+    "prismjs": "^1.30.0",
     "process": "^0.11.10",
     "stream-browserify": "^3.0.0"
   },

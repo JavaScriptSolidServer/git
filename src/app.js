@@ -5,6 +5,52 @@ import * as git from 'isomorphic-git';
 import http from 'isomorphic-git/http/web';
 import LightningFS from '@isomorphic-git/lightning-fs';
 import { marked } from 'marked';
+import Prism from 'prismjs';
+import 'prismjs/components/prism-javascript';
+import 'prismjs/components/prism-typescript';
+import 'prismjs/components/prism-jsx';
+import 'prismjs/components/prism-tsx';
+import 'prismjs/components/prism-json';
+import 'prismjs/components/prism-markup'; // html, xml, svg
+import 'prismjs/components/prism-css';
+import 'prismjs/components/prism-markdown';
+import 'prismjs/components/prism-bash';
+import 'prismjs/components/prism-python';
+import 'prismjs/components/prism-yaml';
+import 'prismjs/components/prism-rust';
+import 'prismjs/components/prism-go';
+import 'prismjs/components/prism-java';
+
+const LANG_BY_EXT = {
+  js: 'javascript', mjs: 'javascript', cjs: 'javascript',
+  jsx: 'jsx',
+  ts: 'typescript', tsx: 'tsx',
+  html: 'markup', htm: 'markup', xml: 'markup', svg: 'markup',
+  css: 'css', scss: 'css',
+  json: 'json',
+  md: 'markdown', markdown: 'markdown',
+  sh: 'bash', bash: 'bash',
+  py: 'python',
+  yml: 'yaml', yaml: 'yaml',
+  rs: 'rust',
+  go: 'go',
+  java: 'java',
+};
+
+function detectLanguage(filename) {
+  const ext = filename.split('.').pop().toLowerCase();
+  const lang = LANG_BY_EXT[ext];
+  return lang && Prism.languages[lang] ? lang : null;
+}
+
+function highlight(code, lang) {
+  if (!lang) return null;
+  try {
+    return Prism.highlight(code, Prism.languages[lang], lang);
+  } catch {
+    return null;
+  }
+}
 
 const html = htm.bind(h);
 
@@ -141,7 +187,9 @@ function App() {
       if (MD_RE.test(filePath)) {
         setFileView({ kind: 'markdown', html: marked.parse(text), path: filePath, oid });
       } else {
-        setFileView({ kind: 'text', text, path: filePath, oid });
+        const lang = detectLanguage(filePath);
+        const highlighted = lang ? highlight(text, lang) : null;
+        setFileView({ kind: 'text', text, html: highlighted, lang, path: filePath, oid });
       }
     } catch (e) {
       setError(e.message || String(e));
@@ -382,7 +430,9 @@ function App() {
                 <span class="oid">${fileView.oid?.slice(0, 8)}</span>
               </p>
               ${fileView.kind === 'markdown' && html`<div class="readme" dangerouslySetInnerHTML=${{ __html: fileView.html }}></div>`}
-              ${fileView.kind === 'text' && html`<pre class="file-content"><code>${fileView.text}</code></pre>`}
+              ${fileView.kind === 'text' && (fileView.html
+                ? html`<pre class="file-content language-${fileView.lang}"><code dangerouslySetInnerHTML=${{ __html: fileView.html }}></code></pre>`
+                : html`<pre class="file-content"><code>${fileView.text}</code></pre>`)}
               ${fileView.kind === 'image' && html`<div class="file-content image"><img src=${fileView.src} alt=${fileView.path} /></div>`}
               ${fileView.kind === 'binary' && html`<p class="meta">Binary file (${fileView.size} bytes) — preview not shown.</p>`}
               ${fileView.kind === 'too-large' && html`<p class="meta">File too large to display (${fileView.size} bytes).</p>`}
