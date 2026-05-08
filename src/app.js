@@ -43,6 +43,41 @@ function detectLanguage(filename) {
   return lang && Prism.languages[lang] ? lang : null;
 }
 
+const FILE_ICON_BY_EXT = {
+  js: '\u{1F7E8}', mjs: '\u{1F7E8}', cjs: '\u{1F7E8}',
+  jsx: '⚛️', tsx: '⚛️',
+  ts: '\u{1F7E6}',
+  html: '\u{1F310}', htm: '\u{1F310}',
+  css: '\u{1F3A8}', scss: '\u{1F3A8}',
+  json: '\u{1F4CB}',
+  md: '\u{1F4DD}', markdown: '\u{1F4DD}',
+  py: '\u{1F40D}',
+  rs: '\u{1F980}',
+  go: '\u{1F439}',
+  java: '☕',
+  yml: '⚙️', yaml: '⚙️',
+  sh: '\u{1F41A}', bash: '\u{1F41A}',
+  png: '\u{1F5BC}️', jpg: '\u{1F5BC}️', jpeg: '\u{1F5BC}️',
+  gif: '\u{1F5BC}️', svg: '\u{1F5BC}️', webp: '\u{1F5BC}️',
+  pdf: '\u{1F4D5}',
+  zip: '\u{1F4E6}', tar: '\u{1F4E6}', gz: '\u{1F4E6}',
+};
+
+const SPECIAL_NAME_ICON = {
+  'README.md': '\u{1F4D6}', 'README': '\u{1F4D6}', 'README.markdown': '\u{1F4D6}',
+  'LICENSE': '⚖️', 'LICENSE.md': '⚖️',
+  'COPYING': '⚖️', 'COPYING.md': '⚖️',
+  '.gitignore': '\u{1F6AB}', '.env': '\u{1F510}',
+  'package.json': '\u{1F4E6}', 'Dockerfile': '\u{1F433}',
+};
+
+function fileIcon(name, type) {
+  if (type === 'tree') return '\u{1F4C1}';
+  if (SPECIAL_NAME_ICON[name]) return SPECIAL_NAME_ICON[name];
+  const ext = name.split('.').pop().toLowerCase();
+  return FILE_ICON_BY_EXT[ext] || '\u{1F4C4}';
+}
+
 function highlight(code, lang) {
   if (!lang) return null;
   try {
@@ -107,6 +142,7 @@ function App() {
   const initialUrl = params.get('repo') || '';
   const initialPath = params.get('path') || '';
   const initialView = params.get('view') || 'files';
+  const initialBranch = params.get('branch') || '';
 
   const [url, setUrl] = useState(initialUrl);
   const [path, setPath] = useState(initialPath);
@@ -241,11 +277,14 @@ function App() {
         return;
       }
 
-      const headRef = refsResult.find(r => r.ref === 'HEAD');
-      let resolvedBranch = headRef?.target?.replace(/^refs\/heads\//, '');
+      let resolvedBranch = initialBranch;
       if (!resolvedBranch) {
-        const firstHead = refsResult.find(r => r.ref.startsWith('refs/heads/'));
-        resolvedBranch = firstHead?.ref.replace(/^refs\/heads\//, '');
+        const headRef = refsResult.find(r => r.ref === 'HEAD');
+        resolvedBranch = headRef?.target?.replace(/^refs\/heads\//, '');
+        if (!resolvedBranch) {
+          const firstHead = refsResult.find(r => r.ref.startsWith('refs/heads/'));
+          resolvedBranch = firstHead?.ref.replace(/^refs\/heads\//, '');
+        }
       }
       if (!resolvedBranch) {
         setLoading(false);
@@ -349,6 +388,15 @@ function App() {
     updateUrl({ repo: url, view: newView });
   };
 
+  const onBranchChange = (e) => {
+    const newBranch = e.target.value;
+    if (newBranch === branch) return;
+    // Page reload — fs uses wipe:true on construction so this gives clean state
+    const p = new URLSearchParams({ repo: url });
+    if (newBranch) p.set('branch', newBranch);
+    location.search = p.toString();
+  };
+
   useEffect(() => {
     const onPop = () => {
       const p = new URLSearchParams(location.search);
@@ -413,7 +461,19 @@ function App() {
                 }
               `;
             })}
+            <span class="visibility-badge">\u{1F310} Public</span>
           </span>
+          ${refs && (() => {
+            const branchList = refs
+              .filter(r => r.ref.startsWith('refs/heads/'))
+              .map(r => r.ref.replace(/^refs\/heads\//, ''));
+            if (branchList.length <= 1) return null;
+            return html`
+              <select class="branch-select" value=${branch} onChange=${onBranchChange}>
+                ${branchList.map(b => html`<option value=${b}>${b}</option>`)}
+              </select>
+            `;
+          })()}
         </div>
 
         <div class="layout">
@@ -453,7 +513,7 @@ function App() {
                   const fullPath = currentFolderPath ? `${currentFolderPath}/${e.path}` : e.path;
                   return html`
                     <li>
-                      <span class="file-icon">${e.type === 'tree' ? '\u{1F4C1}' : '\u{1F4C4}'}</span>
+                      <span class="file-icon">${fileIcon(e.path, e.type)}</span>
                       <a href="?repo=${encodeURIComponent(url)}&path=${encodeURIComponent(fullPath)}" onClick=${(ev) => onEntryClick(ev, fullPath, e.type)}>${e.path}</a>
                     </li>
                   `;

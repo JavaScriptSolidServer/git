@@ -132,11 +132,31 @@
       margin: 1.5rem 0 0;
       padding-bottom: 0.5rem;
       border-bottom: 1px solid #d8dee4;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      flex-wrap: wrap;
     }
-    .repo-breadcrumb { font-size: 1.1rem; display: inline-flex; align-items: center; gap: 0.5rem; }
+    .repo-breadcrumb { font-size: 1.1rem; display: inline-flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
     .repo-breadcrumb .owner { color: #0969da; }
     .repo-breadcrumb .separator { color: #afb8c1; }
     .repo-breadcrumb .repo-name { color: #1f2328; font-weight: 600; }
+    .visibility-badge {
+      font-size: 0.7rem;
+      padding: 2px 8px;
+      border: 1px solid #d0d7de;
+      border-radius: 12px;
+      color: #656d76;
+      margin-left: 0.5rem;
+    }
+    .branch-select {
+      padding: 0.3rem 0.6rem;
+      border: 1px solid #d0d7de;
+      border-radius: 6px;
+      background: #f6f8fa;
+      font-size: 0.85rem;
+      cursor: pointer;
+    }
     .latest-commit {
       margin: 0.75rem 0 0;
       padding: 0.625rem 1rem;
