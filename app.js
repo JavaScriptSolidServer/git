@@ -204,6 +204,17 @@ Please report this to https://github.com/markedjs/marked.`,t){let n="<p>An error
                 ${Oe.map(Q=>Ge`<option value=${Q}>${Q}</option>`)}
               </select>
             `})()}
+          <span class="repo-actions">
+            <button class="repo-action" title="Sign in to watch (Solid-native, not yet implemented)">
+              \u{1F441} Watch <span class="count">0</span>
+            </button>
+            <button class="repo-action" title="Sign in to fork (Solid-native, not yet implemented)">
+              \u{1F374} Fork <span class="count">0</span>
+            </button>
+            <button class="repo-action repo-action-star" title="Sign in to star (Solid-native, not yet implemented)">
+              ⭐ Star <span class="count">0</span>
+            </button>
+          </span>
         </div>
 
         <div class="layout">
