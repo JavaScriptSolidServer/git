@@ -13,10 +13,10 @@ const dir = '/repo';
 
 const MD_RE = /\.(md|markdown)$/i;
 const IMAGE_RE = /\.(png|jpe?g|gif|svg|webp|ico|bmp)$/i;
-const MAX_TEXT_BYTES = 512 * 1024; // 512KB cap
+const MAX_TEXT_BYTES = 512 * 1024;
+const HISTORY_DEPTH = 50;
 
 function isLikelyText(bytes) {
-  // Treat as text if no NUL bytes in first 8KB
   const sample = bytes.slice(0, Math.min(bytes.length, 8192));
   for (let i = 0; i < sample.length; i++) {
     if (sample[i] === 0) return false;
@@ -24,20 +24,36 @@ function isLikelyText(bytes) {
   return true;
 }
 
+function relativeTime(seconds) {
+  const diff = Date.now() / 1000 - seconds;
+  if (diff < 60) return 'just now';
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  if (diff < 86400 * 30) return `${Math.floor(diff / 86400)}d ago`;
+  if (diff < 86400 * 365) return `${Math.floor(diff / (86400 * 30))}mo ago`;
+  return `${Math.floor(diff / (86400 * 365))}y ago`;
+}
+
 function App() {
   const params = new URLSearchParams(location.search);
   const initialUrl = params.get('repo') || '';
   const initialPath = params.get('path') || '';
+  const initialView = params.get('view') || 'files';
 
   const [url, setUrl] = useState(initialUrl);
   const [path, setPath] = useState(initialPath);
+  const [view, setView] = useState(initialView);
   const [refs, setRefs] = useState(null);
   const [tree, setTree] = useState(null);
   const [readmeHtml, setReadmeHtml] = useState(null);
-  const [fileView, setFileView] = useState(null); // { kind, content, path }
+  const [fileView, setFileView] = useState(null);
+  const [commits, setCommits] = useState(null);
+  const [historyFetched, setHistoryFetched] = useState(false);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [commitsLoading, setCommitsLoading] = useState(false);
   const [repoReady, setRepoReady] = useState(false);
+  const [branch, setBranch] = useState(null);
 
   const loadFile = async (filePath) => {
     setError(null);
@@ -48,7 +64,6 @@ function App() {
       const { blob, oid } = await git.readBlob({ fs, dir, oid: headOid, filepath: filePath });
 
       if (IMAGE_RE.test(filePath)) {
-        // Encode bytes to base64 for data URL
         let binary = '';
         for (let i = 0; i < blob.length; i++) binary += String.fromCharCode(blob[i]);
         const ext = filePath.split('.').pop().toLowerCase();
@@ -81,6 +96,29 @@ function App() {
     }
   };
 
+  const loadCommits = async () => {
+    if (commitsLoading) return;
+    setCommitsLoading(true);
+    setError(null);
+    try {
+      if (!historyFetched && branch) {
+        await git.fetch({
+          fs, http, dir,
+          singleBranch: true,
+          depth: HISTORY_DEPTH,
+          ref: branch,
+        });
+        setHistoryFetched(true);
+      }
+      const log = await git.log({ fs, dir, depth: HISTORY_DEPTH });
+      setCommits(log);
+    } catch (e) {
+      setError(e.message || String(e));
+    } finally {
+      setCommitsLoading(false);
+    }
+  };
+
   const loadRepo = async (repoUrl) => {
     if (!repoUrl) return;
     setLoading(true);
@@ -89,6 +127,8 @@ function App() {
     setTree(null);
     setReadmeHtml(null);
     setFileView(null);
+    setCommits(null);
+    setHistoryFetched(false);
     setRepoReady(false);
 
     try {
@@ -101,22 +141,23 @@ function App() {
       }
 
       const headRef = refsResult.find(r => r.ref === 'HEAD');
-      let branch = headRef?.target?.replace(/^refs\/heads\//, '');
-      if (!branch) {
+      let resolvedBranch = headRef?.target?.replace(/^refs\/heads\//, '');
+      if (!resolvedBranch) {
         const firstHead = refsResult.find(r => r.ref.startsWith('refs/heads/'));
-        branch = firstHead?.ref.replace(/^refs\/heads\//, '');
+        resolvedBranch = firstHead?.ref.replace(/^refs\/heads\//, '');
       }
-      if (!branch) {
+      if (!resolvedBranch) {
         setLoading(false);
         return;
       }
+      setBranch(resolvedBranch);
 
       await git.clone({
         fs, http, dir,
         url: repoUrl,
         singleBranch: true,
         depth: 1,
-        ref: branch,
+        ref: resolvedBranch,
       });
 
       const headOid = await git.resolveRef({ fs, dir, ref: 'HEAD' });
@@ -138,7 +179,6 @@ function App() {
 
       setRepoReady(true);
 
-      // After repo loaded, if path is in URL, fetch that file
       if (path) await loadFile(path);
     } catch (e) {
       setError(e.message || String(e));
@@ -149,10 +189,18 @@ function App() {
 
   useEffect(() => { if (initialUrl) loadRepo(initialUrl); }, []);
 
-  const updateUrl = (newRepo, newPath) => {
+  // When view switches to commits and repo is ready, lazy-load commits
+  useEffect(() => {
+    if (view === 'commits' && repoReady && !commits && !commitsLoading) {
+      loadCommits();
+    }
+  }, [view, repoReady]);
+
+  const updateUrl = (next) => {
     const p = new URLSearchParams();
-    if (newRepo) p.set('repo', newRepo);
-    if (newPath) p.set('path', newPath);
+    if (next.repo) p.set('repo', next.repo);
+    if (next.path) p.set('path', next.path);
+    if (next.view && next.view !== 'files') p.set('view', next.view);
     history.pushState(null, '', `?${p}`);
   };
 
@@ -160,35 +208,43 @@ function App() {
     e.preventDefault();
     const newUrl = e.target.elements.repo.value;
     setPath('');
-    updateUrl(newUrl, '');
+    setView('files');
+    updateUrl({ repo: newUrl });
     loadRepo(newUrl);
   };
 
   const onFileClick = (e, filePath, type) => {
-    if (type !== 'blob') return; // ignore folders for now
+    if (type !== 'blob') return;
     e.preventDefault();
     setPath(filePath);
-    updateUrl(url, filePath);
+    updateUrl({ repo: url, path: filePath });
     if (repoReady) loadFile(filePath);
   };
 
-  const onBackToRoot = (e) => {
+  const switchView = (e, newView) => {
     e.preventDefault();
     setPath('');
     setFileView(null);
-    updateUrl(url, '');
+    setView(newView);
+    updateUrl({ repo: url, view: newView });
   };
 
-  // Browser back/forward sync
   useEffect(() => {
     const onPop = () => {
-      const p = new URLSearchParams(location.search).get('path') || '';
-      setPath(p);
-      if (p) loadFile(p); else setFileView(null);
+      const p = new URLSearchParams(location.search);
+      const newPath = p.get('path') || '';
+      const newView = p.get('view') || 'files';
+      setPath(newPath);
+      setView(newView);
+      if (newPath) loadFile(newPath); else setFileView(null);
     };
     addEventListener('popstate', onPop);
     return () => removeEventListener('popstate', onPop);
   }, [repoReady]);
+
+  const showRoot = !fileView;
+  const showFiles = showRoot && view === 'files';
+  const showCommits = showRoot && view === 'commits';
 
   return html`
     <h1>JSS Git</h1>
@@ -209,9 +265,16 @@ function App() {
     ${error && html`<div class="error">${error}</div>`}
     ${loading && html`<p class="loading">Loading…</p>`}
 
+    ${repoReady && !fileView && html`
+      <div class="tabs">
+        <a href="#" class=${view === 'files' ? 'tab active' : 'tab'} onClick=${(e) => switchView(e, 'files')}>Code</a>
+        <a href="#" class=${view === 'commits' ? 'tab active' : 'tab'} onClick=${(e) => switchView(e, 'commits')}>Commits${commits ? ` (${commits.length})` : ''}</a>
+      </div>
+    `}
+
     ${fileView && html`
       <p class="meta breadcrumb">
-        <a href="#" onClick=${onBackToRoot}>← back to files</a>
+        <a href="#" onClick=${(e) => switchView(e, 'files')}>← back to files</a>
         <span class="separator">/</span>
         <span class="path">${fileView.path}</span>
         <span class="oid">${fileView.oid?.slice(0, 8)}</span>
@@ -234,8 +297,7 @@ function App() {
       `}
     `}
 
-    ${!fileView && tree && tree.length > 0 && html`
-      <h2>Files</h2>
+    ${showFiles && tree && tree.length > 0 && html`
       <ul class="file-list">
         ${tree.map((e) => html`
           <li>
@@ -249,12 +311,31 @@ function App() {
       </ul>
     `}
 
-    ${!fileView && readmeHtml && html`
+    ${showFiles && readmeHtml && html`
       <h2>README</h2>
       <div class="readme" dangerouslySetInnerHTML=${{ __html: readmeHtml }}></div>
     `}
 
-    ${refs && refs.length > 0 && !fileView && html`
+    ${showCommits && commitsLoading && html`<p class="loading">Loading commits…</p>`}
+
+    ${showCommits && commits && commits.length > 0 && html`
+      <ul class="commit-list">
+        ${commits.map((c) => html`
+          <li class="commit">
+            <div class="commit-message">${c.commit.message.split('\n')[0]}</div>
+            <div class="commit-meta">
+              <span class="commit-author">${c.commit.author.name}</span>
+              <span>committed ${relativeTime(c.commit.author.timestamp)}</span>
+              <span class="oid">${c.oid.slice(0, 8)}</span>
+            </div>
+          </li>
+        `)}
+      </ul>
+    `}
+
+    ${showCommits && commits && commits.length === 0 && html`<p class="meta">No commits.</p>`}
+
+    ${refs && refs.length > 0 && !fileView && view === 'files' && html`
       <details style="margin-top: 1.5rem;">
         <summary>Refs (${refs.length})</summary>
         <ul class="ref-list">
