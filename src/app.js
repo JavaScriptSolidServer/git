@@ -119,18 +119,11 @@ function parseRepoUrl(rawUrl) {
   try {
     const u = new URL(rawUrl);
     const parts = u.pathname.split('/').filter(Boolean);
-    let owner = u.hostname;
-    let repo = parts[parts.length - 1] || u.hostname;
-
-    // If path has /git/, take owner = first segment (the user/pod owner),
-    // repo = segment after /git/. Handles both /<user>/git/<repo> and
-    // /<user>/.../git/<repo> patterns.
-    const gitIndex = parts.indexOf('git');
-    if (gitIndex >= 0 && parts[gitIndex + 1]) {
-      owner = parts[0];
-      repo = parts[gitIndex + 1];
-    }
-    repo = repo.replace(/\.git$/, '');
+    // Take the last two segments of the URL path as owner/repo.
+    // Faithful to URL structure; mimics GitHub's owner/repo display
+    // without inventing an "owner" not present in the URL.
+    const repo = (parts[parts.length - 1] || u.hostname).replace(/\.git$/, '');
+    const owner = parts[parts.length - 2] || u.hostname;
     return { owner, repo };
   } catch {
     return { owner: '', repo: rawUrl };
