@@ -143,6 +143,7 @@ function App() {
   const initialPath = params.get('path') || '';
   const initialView = params.get('view') || 'files';
   const initialBranch = params.get('branch') || '';
+  const initialCommit = params.get('commit') || '';
 
   const [url, setUrl] = useState(initialUrl);
   const [path, setPath] = useState(initialPath);
@@ -155,11 +156,78 @@ function App() {
   const [commits, setCommits] = useState(null);
   const [historyFetched, setHistoryFetched] = useState(false);
   const [latestCommit, setLatestCommit] = useState(null);
+  const [commitDetail, setCommitDetail] = useState(null);
+  const [selectedCommit, setSelectedCommit] = useState(initialCommit);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [commitsLoading, setCommitsLoading] = useState(false);
   const [repoReady, setRepoReady] = useState(false);
   const [branch, setBranch] = useState(null);
+
+  const loadCommitDetail = async (oid) => {
+    setError(null);
+    setCommitDetail(null);
+    try {
+      const result = await git.readCommit({ fs, dir, oid });
+      const commit = result.commit;
+      const parentOids = commit.parent || [];
+
+      // Compute changed files vs parent (or all files for initial commit)
+      let files = [];
+      if (parentOids.length > 0) {
+        const parentOid = parentOids[0];
+        const parentCommit = await git.readCommit({ fs, dir, oid: parentOid });
+        const parentTreeOid = parentCommit.commit.tree;
+        const treeOid = commit.tree;
+
+        // Walk both trees and diff
+        const collected = await git.walk({
+          fs, dir,
+          trees: [
+            git.TREE({ ref: parentTreeOid }),
+            git.TREE({ ref: treeOid }),
+          ],
+          map: async function (filepath, entries) {
+            if (filepath === '.') return;
+            const [parent, current] = entries;
+            if (!parent && current) {
+              if ((await current.type()) !== 'blob') return;
+              return { path: filepath, change: 'added' };
+            }
+            if (parent && !current) {
+              if ((await parent.type()) !== 'blob') return;
+              return { path: filepath, change: 'deleted' };
+            }
+            if (parent && current) {
+              if ((await current.type()) !== 'blob') return;
+              const a = await parent.oid();
+              const b = await current.oid();
+              if (a !== b) return { path: filepath, change: 'modified' };
+            }
+          },
+        });
+        files = collected.filter(Boolean);
+      } else {
+        // Initial commit — list all files in tree
+        const collected = await git.walk({
+          fs, dir,
+          trees: [git.TREE({ ref: commit.tree })],
+          map: async function (filepath, [entry]) {
+            if (filepath === '.') return;
+            if (!entry) return;
+            if ((await entry.type()) !== 'blob') return;
+            return { path: filepath, change: 'added' };
+          },
+        });
+        files = collected.filter(Boolean);
+      }
+
+      files.sort((a, b) => a.path.localeCompare(b.path));
+      setCommitDetail({ oid, commit, parents: parentOids, files });
+    } catch (e) {
+      setError(e.message || String(e));
+    }
+  };
 
   const loadFolder = async (folderPath) => {
     const headOid = await git.resolveRef({ fs, dir, ref: 'HEAD' });
@@ -350,6 +418,7 @@ function App() {
     if (next.repo) p.set('repo', next.repo);
     if (next.path) p.set('path', next.path);
     if (next.view && next.view !== 'files') p.set('view', next.view);
+    if (next.commit) p.set('commit', next.commit);
     history.pushState(null, '', `?${p}`);
   };
 
@@ -388,6 +457,30 @@ function App() {
     updateUrl({ repo: url, view: newView });
   };
 
+  const onCommitClick = async (e, oid) => {
+    e.preventDefault();
+    setSelectedCommit(oid);
+    updateUrl({ repo: url, view: 'commits', commit: oid });
+    // Ensure history fetched so we can read parent commits
+    if (!historyFetched && branch) {
+      try {
+        await git.fetch({ fs, http, dir, singleBranch: true, depth: HISTORY_DEPTH, ref: branch });
+        setHistoryFetched(true);
+      } catch (err) {
+        setError(err.message || String(err));
+        return;
+      }
+    }
+    await loadCommitDetail(oid);
+  };
+
+  const exitCommitDetail = (e) => {
+    e.preventDefault();
+    setCommitDetail(null);
+    setSelectedCommit('');
+    updateUrl({ repo: url, view: 'commits' });
+  };
+
   const onBranchChange = (e) => {
     const newBranch = e.target.value;
     if (newBranch === branch) return;
@@ -402,20 +495,32 @@ function App() {
       const p = new URLSearchParams(location.search);
       const newPath = p.get('path') || '';
       const newView = p.get('view') || 'files';
+      const newCommit = p.get('commit') || '';
       setPath(newPath);
       setView(newView);
+      setSelectedCommit(newCommit);
       if (newPath) loadPath(newPath);
       else { setSubTree(null); setFileView(null); }
+      if (newCommit) loadCommitDetail(newCommit);
+      else setCommitDetail(null);
     };
     addEventListener('popstate', onPop);
     return () => removeEventListener('popstate', onPop);
   }, [repoReady]);
 
-  const isFileView = !!fileView;
-  const isFolderView = !!subTree && !fileView;
-  const isRootView = !fileView && !subTree;
-  const showFiles = !isFileView && view === 'files';
-  const showCommits = !isFileView && !isFolderView && view === 'commits';
+  // After repo loads, if URL has &commit=, load that commit detail
+  useEffect(() => {
+    if (repoReady && initialCommit && !commitDetail) {
+      onCommitClick({ preventDefault: () => {} }, initialCommit);
+    }
+  }, [repoReady]);
+
+  const isCommitDetail = !!commitDetail;
+  const isFileView = !!fileView && !isCommitDetail;
+  const isFolderView = !!subTree && !fileView && !isCommitDetail;
+  const isRootView = !fileView && !subTree && !isCommitDetail;
+  const showFiles = !isFileView && !isCommitDetail && view === 'files';
+  const showCommits = !isFileView && !isFolderView && !isCommitDetail && view === 'commits';
   const currentEntries = subTree || tree;
   const currentFolderPath = isFolderView ? path : '';
 
@@ -530,18 +635,57 @@ function App() {
             ${showCommits && commits && commits.length > 0 && html`
               <ul class="commit-list">
                 ${commits.map((c) => html`
-                  <li class="commit">
+                  <li class="commit commit-clickable" onClick=${(e) => onCommitClick(e, c.oid)}>
                     <div class="commit-message">${c.commit.message.split('\n')[0]}</div>
                     <div class="commit-meta">
                       <span class="commit-author">${c.commit.author.name}</span>
                       <span>committed ${relativeTime(c.commit.author.timestamp)}</span>
-                      <span class="oid">${c.oid.slice(0, 8)}</span>
+                      <a href="?repo=${encodeURIComponent(url)}&view=commits&commit=${c.oid}" class="oid" onClick=${(e) => onCommitClick(e, c.oid)}>${c.oid.slice(0, 8)}</a>
                     </div>
                   </li>
                 `)}
               </ul>
             `}
             ${showCommits && commits && commits.length === 0 && html`<p class="meta">No commits.</p>`}
+
+            ${isCommitDetail && commitDetail && html`
+              <p class="meta breadcrumb">
+                <a href="#" onClick=${exitCommitDetail}>← back to commits</a>
+                <span class="separator">/</span>
+                <span class="oid">${commitDetail.oid.slice(0, 8)}</span>
+              </p>
+
+              <div class="commit-detail">
+                <pre class="commit-detail-message">${commitDetail.commit.message.trimEnd()}</pre>
+                <div class="commit-detail-meta">
+                  <span class="commit-author">${commitDetail.commit.author.name}</span>
+                  <span class="meta">${commitDetail.commit.author.email}</span>
+                  <span class="meta">committed ${relativeTime(commitDetail.commit.author.timestamp)}</span>
+                </div>
+                ${commitDetail.parents.length > 0 && html`
+                  <div class="commit-detail-meta">
+                    <span class="meta">Parent${commitDetail.parents.length > 1 ? 's' : ''}:</span>
+                    ${commitDetail.parents.map(p => html`<a href="?repo=${encodeURIComponent(url)}&view=commits&commit=${p}" class="oid" onClick=${(e) => onCommitClick(e, p)}>${p.slice(0, 8)}</a>`)}
+                  </div>
+                `}
+              </div>
+
+              <h3 style="margin-top: 1.5rem;">Changed files (${commitDetail.files.length})</h3>
+              ${commitDetail.files.length === 0
+                ? html`<p class="meta">No file changes detected.</p>`
+                : html`
+                  <ul class="file-list">
+                    ${commitDetail.files.map(f => html`
+                      <li>
+                        <span class="file-icon">${fileIcon(f.path.split('/').pop(), 'blob')}</span>
+                        <span class=${'change-badge change-' + f.change}>${f.change}</span>
+                        <span class="path-segment">${f.path}</span>
+                      </li>
+                    `)}
+                  </ul>
+                `
+              }
+            `}
           </div>
 
           <aside class="sidebar">
