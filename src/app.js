@@ -389,6 +389,10 @@ function App() {
 
       setRepoReady(true);
 
+      // Update document title for browser tab + bookmarks
+      const { owner, repo } = parseRepoUrl(repoUrl);
+      document.title = `${owner}/${repo} · JSS Git`;
+
       if (path) await loadPath(path);
     } catch (e) {
       setError(e.message || String(e));
