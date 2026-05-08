@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>JSS Git</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      max-width: 900px;
+      margin: 2rem auto;
+      padding: 0 1rem;
+      color: #1f2328;
+    }
+    h1 { font-size: 1.5rem; margin-bottom: 0.25rem; }
+    h2 { font-size: 1.1rem; margin-top: 1.5rem; }
+    input[type=url] {
+      width: 100%;
+      padding: 0.5rem 0.75rem;
+      border: 1px solid #d0d7de;
+      border-radius: 6px;
+      font-size: 0.9rem;
+      box-sizing: border-box;
+    }
+    button {
+      padding: 0.5rem 1rem;
+      background: #1f883d;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.9rem;
+    }
+    button:hover { background: #1a7f37; }
+    .form-row { display: flex; gap: 0.5rem; margin: 1rem 0; }
+    .form-row input { flex: 1; }
+    .ref-list { list-style: none; padding: 0; border: 1px solid #d0d7de; border-radius: 6px; }
+    .ref-list li {
+      padding: 0.5rem 0.75rem;
+      border-bottom: 1px solid #d0d7de;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      font-size: 0.85rem;
+      display: flex;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+    .ref-list li:last-child { border-bottom: none; }
+    .oid { color: #656d76; }
+    .error {
+      padding: 0.75rem;
+      background: #ffebe9;
+      border: 1px solid #ffc1ba;
+      border-radius: 6px;
+      color: #82071e;
+      margin: 1rem 0;
+      font-size: 0.9rem;
+    }
+    .loading { color: #656d76; font-style: italic; }
+    .meta { color: #656d76; font-size: 0.85rem; }
+    a { color: #0969da; }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+  <script type="module">
+    import { h, render } from 'https://esm.sh/preact@10';
+    import { useState, useEffect } from 'https://esm.sh/preact@10/hooks';
+    import htm from 'https://esm.sh/htm@3';
+    import * as git from 'https://esm.sh/isomorphic-git@1';
+    import http from 'https://esm.sh/isomorphic-git@1/http/web';
+
+    const html = htm.bind(h);
+
+    function App() {
+      const initialUrl = new URLSearchParams(location.search).get('repo') || '';
+      const [url, setUrl] = useState(initialUrl);
+      const [refs, setRefs] = useState(null);
+      const [error, setError] = useState(null);
+      const [loading, setLoading] = useState(false);
+
+      const fetchRefs = async (repoUrl) => {
+        if (!repoUrl) return;
+        setLoading(true);
+        setError(null);
+        setRefs(null);
+        try {
+          const result = await git.listServerRefs({ http, url: repoUrl });
+          setRefs(result);
+        } catch (e) {
+          setError(e.message || String(e));
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      useEffect(() => { if (initialUrl) fetchRefs(initialUrl); }, []);
+
+      const onSubmit = (e) => {
+        e.preventDefault();
+        const newUrl = e.target.elements.repo.value;
+        history.replaceState(null, '', `?${new URLSearchParams({ repo: newUrl })}`);
+        fetchRefs(newUrl);
+      };
+
+      return html`
+        <h1>JSS Git</h1>
+        <p class="meta">Browse a git repository hosted on a Solid pod (or any git remote).</p>
+        <form onSubmit=${onSubmit}>
+          <div class="form-row">
+            <input
+              type="url"
+              name="repo"
+              placeholder="https://your.pod/path/repo"
+              value=${url}
+              onInput=${(e) => setUrl(e.target.value)}
+            />
+            <button type="submit">Load</button>
+          </div>
+        </form>
+
+        ${error && html`<div class="error">${error}</div>`}
+        ${loading && html`<p class="loading">Fetching refs…</p>`}
+        ${refs && refs.length === 0 && html`<p class="meta">No refs found.</p>`}
+        ${refs && refs.length > 0 && html`
+          <h2>Refs (${refs.length})</h2>
+          <ul class="ref-list">
+            ${refs.map((r) => html`
+              <li>
+                <span>${r.ref}</span>
+                <span class="oid">${r.oid?.slice(0, 8) || ''}</span>
+              </li>
+            `)}
+          </ul>
+        `}
+
+        <p class="meta" style="margin-top: 3rem;">
+          <a href="https://preactjs.com">Preact</a> +
+          <a href="https://github.com/developit/htm">HTM</a> +
+          <a href="https://isomorphic-git.org">isomorphic-git</a>.
+          No build step. View source.
+        </p>
+      `;
+    }
+
+    render(html`<${App}/>`, document.getElementById('app'));
+  </script>
+</body>
+</html>
