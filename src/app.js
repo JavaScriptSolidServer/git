@@ -34,6 +34,25 @@ function relativeTime(seconds) {
   return `${Math.floor(diff / (86400 * 365))}y ago`;
 }
 
+function parseRepoUrl(rawUrl) {
+  try {
+    const u = new URL(rawUrl);
+    const parts = u.pathname.split('/').filter(Boolean);
+    let owner = u.hostname;
+    let repo = parts[parts.length - 1] || u.hostname;
+
+    const gitIndex = parts.indexOf('git');
+    if (gitIndex >= 0 && parts[gitIndex - 1] && parts[gitIndex + 1]) {
+      owner = parts[gitIndex - 1];
+      repo = parts[gitIndex + 1];
+    }
+    repo = repo.replace(/\.git$/, '');
+    return { owner, repo };
+  } catch {
+    return { owner: '', repo: rawUrl };
+  }
+}
+
 function App() {
   const params = new URLSearchParams(location.search);
   const initialUrl = params.get('repo') || '';
@@ -49,6 +68,7 @@ function App() {
   const [fileView, setFileView] = useState(null);
   const [commits, setCommits] = useState(null);
   const [historyFetched, setHistoryFetched] = useState(false);
+  const [latestCommit, setLatestCommit] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [commitsLoading, setCommitsLoading] = useState(false);
@@ -129,6 +149,7 @@ function App() {
     setFileView(null);
     setCommits(null);
     setHistoryFetched(false);
+    setLatestCommit(null);
     setRepoReady(false);
 
     try {
@@ -161,7 +182,16 @@ function App() {
       });
 
       const headOid = await git.resolveRef({ fs, dir, ref: 'HEAD' });
-      const { tree: treeEntries } = await git.readTree({ fs, dir, oid: headOid });
+
+      const headCommit = await git.readCommit({ fs, dir, oid: headOid });
+      setLatestCommit({
+        oid: headOid,
+        author: headCommit.commit.author.name,
+        message: headCommit.commit.message.split('\n')[0],
+        timestamp: headCommit.commit.author.timestamp,
+      });
+
+      const { tree: treeEntries } = await git.readTree({ fs, dir, oid: headCommit.commit.tree });
       treeEntries.sort((a, b) => {
         if (a.type !== b.type) return a.type === 'tree' ? -1 : 1;
         return a.path.localeCompare(b.path);
@@ -265,10 +295,32 @@ function App() {
     ${error && html`<div class="error">${error}</div>`}
     ${loading && html`<p class="loading">Loading…</p>`}
 
+    ${repoReady && (() => {
+      const { owner, repo } = parseRepoUrl(url);
+      return html`
+        <div class="repo-header">
+          <span class="repo-breadcrumb">
+            <span class="owner">${owner}</span>
+            <span class="separator">/</span>
+            <strong class="repo-name">${repo}</strong>
+          </span>
+        </div>
+      `;
+    })()}
+
     ${repoReady && !fileView && html`
       <div class="tabs">
         <a href="#" class=${view === 'files' ? 'tab active' : 'tab'} onClick=${(e) => switchView(e, 'files')}>Code</a>
         <a href="#" class=${view === 'commits' ? 'tab active' : 'tab'} onClick=${(e) => switchView(e, 'commits')}>Commits${commits ? ` (${commits.length})` : ''}</a>
+      </div>
+    `}
+
+    ${showFiles && latestCommit && html`
+      <div class="latest-commit">
+        <span class="commit-author">${latestCommit.author}</span>
+        <span class="commit-msg">${latestCommit.message}</span>
+        <span class="oid">${latestCommit.oid.slice(0, 8)}</span>
+        <span class="meta">${relativeTime(latestCommit.timestamp)}</span>
       </div>
     `}
 

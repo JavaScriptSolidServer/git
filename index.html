@@ -128,6 +128,30 @@
     .commit-message { font-weight: 500; margin-bottom: 0.25rem; }
     .commit-meta { color: #656d76; font-size: 0.85rem; display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center; }
     .commit-author { color: #1f2328; }
+    .repo-header {
+      margin: 1.5rem 0 0;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid #d8dee4;
+    }
+    .repo-breadcrumb { font-size: 1.1rem; display: inline-flex; align-items: center; gap: 0.5rem; }
+    .repo-breadcrumb .owner { color: #0969da; }
+    .repo-breadcrumb .separator { color: #afb8c1; }
+    .repo-breadcrumb .repo-name { color: #1f2328; font-weight: 600; }
+    .latest-commit {
+      margin: 0.75rem 0 0;
+      padding: 0.625rem 1rem;
+      border: 1px solid #d0d7de;
+      border-radius: 6px 6px 0 0;
+      background: #f6f8fa;
+      display: flex;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      align-items: center;
+      font-size: 0.85rem;
+    }
+    .latest-commit + .file-list { border-top-left-radius: 0; border-top-right-radius: 0; border-top: none; margin-top: 0; }
+    .latest-commit .commit-msg { color: #1f2328; flex: 1; min-width: 0; }
+    .latest-commit .commit-author { font-weight: 600; }
   </style>
 </head>
 <body>
