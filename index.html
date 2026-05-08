@@ -7,7 +7,7 @@
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-      max-width: 1000px;
+      max-width: 1200px;
       margin: 2rem auto;
       padding: 0 1rem;
       color: #1f2328;
@@ -152,6 +152,42 @@
     .latest-commit + .file-list { border-top-left-radius: 0; border-top-right-radius: 0; border-top: none; margin-top: 0; }
     .latest-commit .commit-msg { color: #1f2328; flex: 1; min-width: 0; }
     .latest-commit .commit-author { font-weight: 600; }
+    .layout {
+      display: grid;
+      grid-template-columns: 1fr 280px;
+      gap: 2rem;
+      margin-top: 1rem;
+      align-items: start;
+    }
+    @media (max-width: 800px) {
+      .layout { grid-template-columns: 1fr; }
+    }
+    .main { min-width: 0; }
+    .sidebar { font-size: 0.85rem; color: #656d76; }
+    .sidebar h3 {
+      font-size: 1rem; color: #1f2328; margin: 0 0 0.5rem;
+      padding-bottom: 0.3rem; border-bottom: 1px solid #d8dee4;
+    }
+    .sidebar-desc { margin: 0 0 0.75rem; color: #1f2328; }
+    .sidebar-link a { word-break: break-all; font-size: 0.8rem; }
+    .sidebar-stats { list-style: none; padding: 0; margin: 1rem 0 0; }
+    .sidebar-stats li {
+      padding: 0.4rem 0;
+      border-top: 1px solid #d8dee4;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .sidebar-stats .stat-label { color: #656d76; }
+    .sidebar-stats code {
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      font-size: 0.8rem;
+      background: #eaeef2;
+      padding: 1px 6px;
+      border-radius: 3px;
+      color: #1f2328;
+    }
   </style>
 </head>
 <body>

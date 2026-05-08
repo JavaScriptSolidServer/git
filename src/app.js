@@ -41,9 +41,12 @@ function parseRepoUrl(rawUrl) {
     let owner = u.hostname;
     let repo = parts[parts.length - 1] || u.hostname;
 
+    // If path has /git/, take owner = first segment (the user/pod owner),
+    // repo = segment after /git/. Handles both /<user>/git/<repo> and
+    // /<user>/.../git/<repo> patterns.
     const gitIndex = parts.indexOf('git');
-    if (gitIndex >= 0 && parts[gitIndex - 1] && parts[gitIndex + 1]) {
-      owner = parts[gitIndex - 1];
+    if (gitIndex >= 0 && parts[gitIndex + 1]) {
+      owner = parts[0];
       repo = parts[gitIndex + 1];
     }
     repo = repo.replace(/\.git$/, '');
@@ -295,110 +298,97 @@ function App() {
     ${error && html`<div class="error">${error}</div>`}
     ${loading && html`<p class="loading">Loading…</p>`}
 
-    ${repoReady && (() => {
-      const { owner, repo } = parseRepoUrl(url);
-      return html`
-        <div class="repo-header">
-          <span class="repo-breadcrumb">
-            <span class="owner">${owner}</span>
-            <span class="separator">/</span>
-            <strong class="repo-name">${repo}</strong>
-          </span>
-        </div>
-      `;
-    })()}
-
-    ${repoReady && !fileView && html`
-      <div class="tabs">
-        <a href="#" class=${view === 'files' ? 'tab active' : 'tab'} onClick=${(e) => switchView(e, 'files')}>Code</a>
-        <a href="#" class=${view === 'commits' ? 'tab active' : 'tab'} onClick=${(e) => switchView(e, 'commits')}>Commits${commits ? ` (${commits.length})` : ''}</a>
+    ${repoReady && html`
+      <div class="repo-header">
+        <span class="repo-breadcrumb">
+          <span class="owner">${parseRepoUrl(url).owner}</span>
+          <span class="separator">/</span>
+          <strong class="repo-name">${parseRepoUrl(url).repo}</strong>
+        </span>
       </div>
-    `}
 
-    ${showFiles && latestCommit && html`
-      <div class="latest-commit">
-        <span class="commit-author">${latestCommit.author}</span>
-        <span class="commit-msg">${latestCommit.message}</span>
-        <span class="oid">${latestCommit.oid.slice(0, 8)}</span>
-        <span class="meta">${relativeTime(latestCommit.timestamp)}</span>
-      </div>
-    `}
-
-    ${fileView && html`
-      <p class="meta breadcrumb">
-        <a href="#" onClick=${(e) => switchView(e, 'files')}>← back to files</a>
-        <span class="separator">/</span>
-        <span class="path">${fileView.path}</span>
-        <span class="oid">${fileView.oid?.slice(0, 8)}</span>
-      </p>
-
-      ${fileView.kind === 'markdown' && html`
-        <div class="readme" dangerouslySetInnerHTML=${{ __html: fileView.html }}></div>
-      `}
-      ${fileView.kind === 'text' && html`
-        <pre class="file-content"><code>${fileView.text}</code></pre>
-      `}
-      ${fileView.kind === 'image' && html`
-        <div class="file-content image"><img src=${fileView.src} alt=${fileView.path} /></div>
-      `}
-      ${fileView.kind === 'binary' && html`
-        <p class="meta">Binary file (${fileView.size} bytes) — preview not shown.</p>
-      `}
-      ${fileView.kind === 'too-large' && html`
-        <p class="meta">File too large to display (${fileView.size} bytes).</p>
-      `}
-    `}
-
-    ${showFiles && tree && tree.length > 0 && html`
-      <ul class="file-list">
-        ${tree.map((e) => html`
-          <li>
-            <span class="file-icon">${e.type === 'tree' ? '\u{1F4C1}' : '\u{1F4C4}'}</span>
-            ${e.type === 'blob'
-              ? html`<a href="?repo=${encodeURIComponent(url)}&path=${encodeURIComponent(e.path)}" onClick=${(ev) => onFileClick(ev, e.path, e.type)}>${e.path}</a>`
-              : html`<span>${e.path}</span>`
-            }
-          </li>
-        `)}
-      </ul>
-    `}
-
-    ${showFiles && readmeHtml && html`
-      <h2>README</h2>
-      <div class="readme" dangerouslySetInnerHTML=${{ __html: readmeHtml }}></div>
-    `}
-
-    ${showCommits && commitsLoading && html`<p class="loading">Loading commits…</p>`}
-
-    ${showCommits && commits && commits.length > 0 && html`
-      <ul class="commit-list">
-        ${commits.map((c) => html`
-          <li class="commit">
-            <div class="commit-message">${c.commit.message.split('\n')[0]}</div>
-            <div class="commit-meta">
-              <span class="commit-author">${c.commit.author.name}</span>
-              <span>committed ${relativeTime(c.commit.author.timestamp)}</span>
-              <span class="oid">${c.oid.slice(0, 8)}</span>
+      <div class="layout">
+        <div class="main">
+          ${!fileView && html`
+            <div class="tabs">
+              <a href="#" class=${view === 'files' ? 'tab active' : 'tab'} onClick=${(e) => switchView(e, 'files')}>Code</a>
+              <a href="#" class=${view === 'commits' ? 'tab active' : 'tab'} onClick=${(e) => switchView(e, 'commits')}>Commits${commits ? ` (${commits.length})` : ''}</a>
             </div>
-          </li>
-        `)}
-      </ul>
-    `}
+          `}
 
-    ${showCommits && commits && commits.length === 0 && html`<p class="meta">No commits.</p>`}
+          ${fileView && html`
+            <p class="meta breadcrumb">
+              <a href="#" onClick=${(e) => switchView(e, 'files')}>← back to files</a>
+              <span class="separator">/</span>
+              <span class="path">${fileView.path}</span>
+              <span class="oid">${fileView.oid?.slice(0, 8)}</span>
+            </p>
 
-    ${refs && refs.length > 0 && !fileView && view === 'files' && html`
-      <details style="margin-top: 1.5rem;">
-        <summary>Refs (${refs.length})</summary>
-        <ul class="ref-list">
-          ${refs.map((r) => html`
-            <li>
-              <span>${r.ref}</span>
-              <span class="oid">${r.oid?.slice(0, 8) || ''}</span>
-            </li>
-          `)}
-        </ul>
-      </details>
+            ${fileView.kind === 'markdown' && html`<div class="readme" dangerouslySetInnerHTML=${{ __html: fileView.html }}></div>`}
+            ${fileView.kind === 'text' && html`<pre class="file-content"><code>${fileView.text}</code></pre>`}
+            ${fileView.kind === 'image' && html`<div class="file-content image"><img src=${fileView.src} alt=${fileView.path} /></div>`}
+            ${fileView.kind === 'binary' && html`<p class="meta">Binary file (${fileView.size} bytes) — preview not shown.</p>`}
+            ${fileView.kind === 'too-large' && html`<p class="meta">File too large to display (${fileView.size} bytes).</p>`}
+          `}
+
+          ${showFiles && latestCommit && html`
+            <div class="latest-commit">
+              <span class="commit-author">${latestCommit.author}</span>
+              <span class="commit-msg">${latestCommit.message}</span>
+              <span class="oid">${latestCommit.oid.slice(0, 8)}</span>
+              <span class="meta">${relativeTime(latestCommit.timestamp)}</span>
+            </div>
+          `}
+
+          ${showFiles && tree && tree.length > 0 && html`
+            <ul class="file-list">
+              ${tree.map((e) => html`
+                <li>
+                  <span class="file-icon">${e.type === 'tree' ? '\u{1F4C1}' : '\u{1F4C4}'}</span>
+                  ${e.type === 'blob'
+                    ? html`<a href="?repo=${encodeURIComponent(url)}&path=${encodeURIComponent(e.path)}" onClick=${(ev) => onFileClick(ev, e.path, e.type)}>${e.path}</a>`
+                    : html`<span>${e.path}</span>`
+                  }
+                </li>
+              `)}
+            </ul>
+          `}
+
+          ${showFiles && readmeHtml && html`
+            <h2>README</h2>
+            <div class="readme" dangerouslySetInnerHTML=${{ __html: readmeHtml }}></div>
+          `}
+
+          ${showCommits && commitsLoading && html`<p class="loading">Loading commits…</p>`}
+          ${showCommits && commits && commits.length > 0 && html`
+            <ul class="commit-list">
+              ${commits.map((c) => html`
+                <li class="commit">
+                  <div class="commit-message">${c.commit.message.split('\n')[0]}</div>
+                  <div class="commit-meta">
+                    <span class="commit-author">${c.commit.author.name}</span>
+                    <span>committed ${relativeTime(c.commit.author.timestamp)}</span>
+                    <span class="oid">${c.oid.slice(0, 8)}</span>
+                  </div>
+                </li>
+              `)}
+            </ul>
+          `}
+          ${showCommits && commits && commits.length === 0 && html`<p class="meta">No commits.</p>`}
+        </div>
+
+        <aside class="sidebar">
+          <h3>About</h3>
+          <p class="sidebar-desc">A repository hosted on a Solid pod.</p>
+          <p class="sidebar-link"><a href=${url} target="_blank" rel="noopener">${url}</a></p>
+          <ul class="sidebar-stats">
+            ${branch && html`<li><span class="stat-label">Branch</span><code>${branch}</code></li>`}
+            ${refs && html`<li><span class="stat-label">Refs</span>${refs.length}</li>`}
+            ${commits && html`<li><span class="stat-label">Commits</span>${commits.length}+</li>`}
+            ${tree && html`<li><span class="stat-label">Files (root)</span>${tree.length}</li>`}
+          </ul>
+        </aside>
+      </div>
     `}
 
     ${refs && refs.length === 0 && html`<p class="meta">No refs found (empty repo).</p>`}
